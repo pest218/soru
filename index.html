@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Off Road Ultimate</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="js/theme-toggle.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="navbar-inner">
+    <a class="navbar-brand" href="index.html" aria-label="Super Off Road Ultimate">
+      <img class="navbar-logo logo-light" src="assets/img/logo-header-light.png" alt="Super Off Road Ultimate">
+      <img class="navbar-logo logo-dark" src="assets/img/logo-header-dark.png" alt="Super Off Road Ultimate">
+    </a>
+    <div class="navbar-right">
+      <button class="theme-toggle" aria-label="Toggle dark mode">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-label">Docs</div>
+    <a href="index.html" aria-current="page">Romhack Overview</a>
+    <a href="pages/technical-overview.html">Technical Overview</a>
+    <a href="pages/history.html">History</a>
+  </nav>
+
+  <main>
+  <div class="doc-content">
+    <h1>Super Off Road Ultimate</h1>
+    <p class="tagline">A boot-time cheat/config hack for <strong>Super Off Road (USA)</strong> on the SNES.</p>
+
+    <p>Adds a configuration screen that appears before the game's own title screen.</p>
+
+    <h2>Features</h2>
+    <p>Boot screen shows "SUPER OFF ROAD ULTIMATE" and a cursor-navigable menu:</p>
+
+    <table class="menu-table">
+      <thead>
+        <tr><th>Row</th><th>Name</th><th>Effect</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>0</td><td>MAX MONEY</td><td>Money stays locked at 10,000,000, no matter how much you spend</td></tr>
+        <tr><td>1</td><td>MAX NITRO</td><td>Nitro stays maxed at 99, no matter how much you use</td></tr>
+        <tr><td>2</td><td>MAX STATS</td><td>Truck stats - Acceleration, Top Speed, Handling, Tires - are all locked at max (level 6)</td></tr>
+        <tr><td>3</td><td>LAST LAP</td><td>The race stays on its final lap for whatever LAPS is set (01–99), whatever race length you pick</td></tr>
+        <tr><td>4</td><td>TRACK</td><td>Selects one of the 16 tracks directly, instead of following the vanilla 64-race cycle</td></tr>
+        <tr><td>5</td><td>DIRECTION</td><td>Race the selected track FORWARD or REVERSE. Tracks with no reverse layout, like Boulder Hill, always play forward regardless of this setting</td></tr>
+        <tr><td>6</td><td>LAPS</td><td>Sets the race length to anywhere from 01 to 99 laps. D-pad Left/Right steps by 1 and wraps around at either end; the L and R shoulder buttons step by 10. Lap counts above 9 are readable because the hack adds a second lap digit to the race HUD - see <a href="#outside-menu">Changes outside the menu</a></td></tr>
+        <tr><td>7</td><td>APPLY TO</td><td>Targets the cheats above at P1 only, P2 only, or both players</td></tr>
+        <tr><td>8</td><td>DEFAULTS</td><td>Resets all cheats and settings above back to vanilla defaults, so the game plays exactly like the original, untouched</td></tr>
+        <tr><td>9</td><td>START GAME</td><td>Confirms your choices and starts the game with those settings active</td></tr>
+      </tbody>
+    </table>
+
+    <figure>
+      <img src="assets/img/boot-menu-v3.png" alt="Super Off Road Ultimate boot-time config menu, with LAPS showing a two-digit value" style="width:100%;max-width:485px;border-radius:8px;border:1px solid var(--border);">
+      <figcaption>The boot-time config menu</figcaption>
+    </figure>
+
+    <p>Picking a track + direction and starting the game plays that exact race normally to completion - it is not a practice/replay loop, just a direct pick of what the vanilla 64-race cycle would otherwise have selected automatically.</p>
+
+    <p>Controls: D-pad Up/Down to move the cursor, Left/Right to change a row's value, A or B to confirm. On the LAPS row, the L and R shoulder buttons step the value by 10.</p>
+
+    <h2 id="outside-menu">Changes outside the menu</h2>
+    <p>Four things are changed for every race, whatever the menu is set to. Three of them exist because the vanilla display simply cannot show what the menu now allows; the fourth puts a name back on the roster.</p>
+
+    <p><strong>A two-digit lap counter.</strong> The original has two separate limits: <strong>4 is the gameplay limit</strong> - a vanilla race is always four laps, and it is over the moment a fifth would start - and <strong>9 is the rendering limit</strong>, because the HUD has room for exactly one lap digit per player. A second, tens digit is drawn alongside the game's own, so the lap readout stays correct all the way up to 99. That extra digit needs somewhere to show through, so transparent windows are cut into the HUD panel's own border artwork at the lap positions.</p>
+
+    <p><strong>A race clock that does not freeze.</strong> The vanilla clock shows total race time as <code>XX.X</code> and stops counting at 99.9 seconds, staying frozen there for the rest of the race. At ordinary lap times that happens after roughly three laps, so most real races spend most of their length watching a clock that no longer moves. Counting continues past that point and the readout switches to three whole-second digits, counting up to 999 seconds - that is 16 minutes and 39 seconds of racing. It reuses the four sprites the game already has in that row - including its decimal point, which is a sprite in its own right - so nothing new is added to the display.</p>
+
+    <p><strong>Ivan Stewart back on the roster.</strong> The arcade original is <em>Ivan "Ironman" Stewart's Super Off Road</em>, licensed around the real off-road racer, and in that original the <strong>grey truck was his</strong>. The SNES conversion carries no Ivan Stewart licence at all - his name appears nowhere on the box, the title screen or the roster. That same grey truck is called <code>M.T</code> there instead, for the late off-road racer <strong>Mickey Thompson</strong>, whose "Stadium Off-Road Racing Series" branding the SNES box does carry.</p>
+    <p>The grey truck is renamed <code>I.S</code> - <strong>I</strong>van <strong>S</strong>tewart. It is that specific truck and no other precisely because it was already his in the licensed original: this restores the pairing the game shipped with in the arcade, rather than assigning his name to an arbitrary truck.</p>
+    <p>The name is his initials rather than his full name because the game's driver-name fields are exactly three characters wide - there is no room for anything longer, and widening them would mean rebuilding the name table and everything that draws from it. Initials with a period are also the form the game already used here: the truck was called <code>M.T</code>, in the same three-character shape. So <code>I.S</code> reads as though it had always been part of the roster.</p>
+    <p><code>M.T</code> is not deleted - he is given a truck of his own instead. Mickey Thompson was every bit as real a driver as Ivan Stewart, and this is his own series, so he gets the second of the two trucks that are <strong>always</strong> computer-controlled. Those two slots are the only ones guaranteed to be on the grid in every race, so putting both real drivers there means <strong>both are always racing</strong> - one player or two. He takes the slot the original game called <code>JON</code>, which is not a real driver: nothing anywhere documents the name, and it does not use the initials-and-period form both licensed drivers use.</p>
+    <p>That leaves the player slot nobody is using, which the original game shows as <code>---</code>. Rather than dashes it now reads <code>R.G</code>, for <strong>Robby Gordon</strong> - Mickey Thompson series champion in 1989, and Ivan Stewart's own Toyota teammate, which fits a game this heavily Toyota-branded. He was racing well before this version shipped in December 1991, so he belongs to exactly the same era as the other two.</p>
+    <p>The result on screen: play alone and the grid is <strong>your own name plus three real drivers</strong> - <code>R.G</code>, <code>M.T</code> and <code>I.S</code>. Play with two people and it is both of your names plus <code>M.T</code> and <code>I.S</code>. No slot is ever wasted on dashes, and the two licensed drivers never disappear.</p>
+
+    <p><strong>The flagman waves on the real final lap.</strong> The marshal on the tower waves his flag as a truck starts its last lap. The original game decides that by comparing against its own fixed race length, so once the race length became adjustable he waved on every lap from the fourth onward rather than only on the last. He now checks the race length actually in effect, so he waves on the true final lap at any LAPS setting - and at the original race length he behaves exactly as he always did.</p>
+
+    <h2>Patches</h2>
+    <ul>
+      <li><code>patches/Super Off Road Ultimate.ips</code></li>
+      <li><code>patches/Super Off Road Ultimate (Fastrom).ips</code></li>
+    </ul>
+    <p>Apply with any IPS patcher (e.g. Floating IPS / Lunar IPS) against your own legally-dumped <strong>Super Off Road (USA)</strong> ROM - use the <code>(Fastrom)</code> patch only if your copy is a FastROM dump. No ROM file is included in this repository.</p>
+
+    <p><a class="button" href="pages/technical-overview.html">Read the technical overview →</a></p>
+  </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Technical Overview - Super Off Road Ultimate</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="../js/theme-toggle.js"></script>
+</head>
+<body>
+<header class="navbar">
+  <div class="navbar-inner">
+    <a class="navbar-brand" href="../index.html" aria-label="Super Off Road Ultimate">
+      <img class="navbar-logo logo-light" src="../assets/img/logo-header-light.png" alt="Super Off Road Ultimate">
+      <img class="navbar-logo logo-dark" src="../assets/img/logo-header-dark.png" alt="Super Off Road Ultimate">
+    </a>
+    <div class="navbar-right">
+      <button class="theme-toggle" aria-label="Toggle dark mode">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="sidebar-label">Docs</div>
+    <a href="../index.html">Romhack Overview</a>
+    <a href="technical-overview.html" aria-current="page">Technical Overview</a>
+    <a href="history.html">History</a>
+  </nav>
+
+  <main>
+  <div class="doc-content">
+    <h1>Technical Overview</h1>
+    <p class="tagline">This document explains how the hack is built, for anyone who wants to understand or extend it.</p>
+
+    <h2 id="boot-hook">Boot hook</h2>
+    <p>The reset vector is redirected to custom code. That code first replays the original game's own boot-init bytes verbatim (CPU native-mode/stack/direct-page setup, the original PPU BG-mode/tilemap/CHR register writes, both of the game's own original init subroutine calls), then continues into the menu instead of jumping straight to the title screen. Because this runs before the title screen exists at all, there's no interaction with any other in-game screen - the menu owns the whole frame until "START GAME" hands control back to the untouched vanilla boot flow at the exact point it would normally have continued.</p>
+
+    <h2 id="menu-rendering">Menu rendering</h2>
+    <p>The menu is drawn on the BG3 background layer, which is unused by the game at this point in boot. A small custom font (one tile per character, reusing the same tile format as the game's own shop-menu font) is DMA'd into VRAM, along with several palettes: normal text, a highlighted cursor color, and colors sampled directly from the real title screen's own art (used for the animated "ULTIMATE" title lettering). The whole 32×32 BG3 tilemap is explicitly cleared at boot - the original boot path never touches BG3 at all, so any register or VRAM region it doesn't set up itself has to be initialized from scratch.</p>
+    <p>Menu state (which row the cursor is on, each cheat toggle, the chosen track/direction/laps, per-row highlight color) lives in a dedicated block of WRAM (bank <code>$7F</code>) that vanilla code never reads or writes, so there's no risk of colliding with anything the game itself uses.</p>
+
+    <h2 id="persistent-effects">Persistent effects (NMI hook)</h2>
+    <p>The same code also installs itself at both NMI vectors (native and emulation mode) for the lifetime of the ROM. Before "START GAME" is pressed, the NMI hook's only job is signalling the menu loop that a new frame has started. After "START GAME", every single frame it:</p>
+    <ul>
+      <li>Re-writes the player's money/nitro/stat values if their respective toggle is on, so spending or losing them in-game has no lasting effect - they're restored right back on the next frame.</li>
+      <li>Applies the direction/track/lap configuration chosen in the menu.</li>
+      <li>Writes the finish threshold for the chosen race length, and holds the player's lap counter on the final lap if "LAST LAP" is on.</li>
+      <li>Patches the race HUD's border tiles in video memory, so the second lap digit has somewhere to show through - but only while a race is actually on screen.</li>
+      <li>Counts the race clock past the point where the game's own timer stops.</li>
+    </ul>
+    <p>The last three are described in their own sections below. Note that the two heavier pieces of work - producing both lap digits, and building the timer readout - are deliberately <em>not</em> done from here; they run inside the game's own render path instead, for reasons covered under the lap counter.</p>
+
+    <h2 id="laps-and-finish">Race length (LAPS) and the finish condition</h2>
+    <p>The vanilla game checks for a race finish with a hardcoded comparison against a fixed lap count, duplicated at two separate points in its own code. That comparison is patched to instead read a WRAM byte that the menu sets from whatever LAPS value was chosen, so any race length from 01 to 99 laps finishes correctly - not just the original hardcoded length.</p>
+    <div class="callout">
+      <p>Finishing an N-lap race requires the game's internal lap-position counter to actually reach N+1 (so a 4-lap race's true finish value is 5). That is what makes the win and placement logic fire, and it is left completely untouched - the counter is never frozen or clamped for game-logic purposes. Only what is <em>drawn</em> is adjusted, and since the readout now carries two digits it reads correctly for every race length the menu offers. At the maximum setting of 99 the true finish value is 100, which is three digits, so the readout shows <code>00</code> for that single instant before the race ends. That is a deliberate choice rather than an oversight: a third digit would not fit the panel, and the moment it appears the race is already over.</p>
+    </div>
+
+    <h2 id="last-lap">Freezing the last lap</h2>
+    <p>Turning on "LAST LAP" stops the lap-position counter from advancing past whatever LAPS is currently set to, so the race behaves as if the player is permanently on the final lap - this works correctly at any race length from 01 to 99, not just the default.</p>
+    <p>One detail matters for correctness rather than display. Crossing the finish line trades a checkpoint-progress reset for a lap increment, and the final standings are sorted on lap count first and checkpoint progress second. Holding the lap counter down across that moment would keep the reset but cancel the increment, which sorts the player last and turns a win into a loss. The freeze is therefore gated on the game's own "this race has been decided" flag, so it stops the instant the race is settled and the game's untouched placement logic sees exactly the values it expects.</p>
+
+    <h2 id="lap-counter">Two-digit lap counter</h2>
+    <p>Two separate limits apply here: <strong>4 is the gameplay limit</strong> - every vanilla race is four laps, and it is over the moment a fifth would start - and <strong>9 is the rendering limit</strong>, because the vanilla HUD reads each racer's lap counter and draws it as a single digit. The one per-frame routine that performs that read is replaced. The replacement splits the raw counter into tens and ones with a short repeated-subtraction divide and writes both digits in the same call, deriving the ones digit from the remainder the divide has already produced.</p>
+    <p>Doing it in that one routine is deliberate. An earlier design called out to this code from the NMI handler instead, and that was confirmed on hardware to cause universal graphical corruption and broken input from the very first screen - traced to the call itself rather than to anything it did. Everything now happens inline in the render path, with no NMI involvement at all.</p>
+    <p>The tens digit also needs somewhere to be visible: the HUD panel's border artwork sits in front of it. Transparent windows are cut into copies of those border tiles and written into video memory while a race is on screen, on a DMA channel the game is not using at that moment. Whether to write them is gated by a keepalive byte that the digit routine refreshes every frame it runs. Leaving the race, or a start or finish animation taking over the screen, simply stops those calls; the byte decays to zero and the patching stops by itself, so nothing is written over a screen that is not the race HUD.</p>
+
+    <h2 id="race-timer">Race timer beyond 99.9 seconds</h2>
+    <p>The vanilla race clock is total race time, not per-lap, and it saturates. Its storage is two bytes: one holding tens of seconds, the other a packed value carrying ones of seconds and tenths. Both stop at their maximum and the display sits frozen at 99.9 for the remainder of the race. A full sweep of work RAM across a long race found no other byte still increasing after the display froze, so there is no larger hidden value to read - the counter genuinely saturates, and any overflow has to be counted separately.</p>
+    <p>The hack latches the moment saturation begins, seeds its own counter at 99 so the number already on screen simply continues, and counts frames from there at 60 per second. The latch also makes the whole thing self-correcting: any frame on which the game is not saturated resets it, so a new race or a restart needs no special handling. The seed is offset by the six frames that remain between 99.9 and the hundredth second, because starting from zero made the switch to "100" arrive a full second late.</p>
+    <p>The readout becomes three whole-second digits, counting up to 999 seconds - that is 16 minutes and 39 seconds, longer than a 99-lap race takes to drive. Vanilla's timer row already contains four sprites: tens of seconds, ones of seconds, the decimal point, and tenths. The decimal point being a sprite of its own is what makes this cheap, because three digits can reuse those existing slots and none has to be created. Their positions are computed relative to the game's own live sprite data rather than from a fixed table, because the panel's origin moves from track to track while its internal spacing does not.</p>
+    <p>Two alternatives were built and rejected on hardware. A four-digit version left a visible transparent gap on the left when the leading digit was blank, and its rightmost digit was clipped by the panel frame. A minutes-and-seconds format was rejected because the dot would have meant two different things either side of the switch - a decimal point in "99.9" and a minute separator in "1.40" - so the number would appear to shrink and read as though the clock had reset.</p>
+
+    <h2 id="flagman">The flagman's final-lap check</h2>
+    <p>A short routine runs on every lap increment, from both of the places the game detects a finish-line crossing, and it starts the tower marshal's flag-wave animation when the crossing racer reaches the final lap. It decides that with a hardcoded comparison against the original game's own race length, and it holds the only write in the ROM that starts that animation.</p>
+    <p>Because this hack makes the race length adjustable, that constant became wrong: at longer race lengths every lap from the fourth onward satisfied it, so the flag was waved at every crossing for the rest of the race. The routine now compares against the live race length instead, one below the finish threshold the menu already sets, so the wave happens on the real final lap. At the original race length the comparison resolves to exactly the value that was hardcoded before, so the behaviour there is unchanged.</p>
+    <p>The corrected routine did not fit in the space the original occupied, so the original body is replaced by a call out to the free ROM area where the rest of the injected code lives, and the vacated bytes are filled with no-ops. The routine's last byte is deliberately left as the original return instruction, so that even an entry point the analysis did not find would return harmlessly instead of running into the animation code that follows it.</p>
+
+    <h2 id="racer-names">Racer names</h2>
+    <p>The game keeps its four driver names in a single twelve-byte table that is copied wholesale into work RAM during race setup, three characters per driver, so a driver's name is simply its index into that block. Two of its four entries are rewritten in place, so in the patched ROM the table reads <code>LND</code>, <code>ALP</code>, <code>M.T</code>, <code>I.S</code>: entry 3 was <code>M.T</code> and becomes <code>I.S</code>, and entry 2 was <code>JON</code> and becomes <code>M.T</code>.</p>
+    <div class="callout">
+      <p>The table is not the roster you see on screen. Entries 0 and 1 are the two human-capable slots, so name entry overwrites them - <code>LND</code> and <code>ALP</code> are only defaults sitting in ROM, replaced by whatever the players type or by <code>---</code> for a slot nobody claims. Entries 2 and 3 are the two slots that are always computer-controlled, and they are the only ones that appear exactly as written. That is precisely why both real drivers were put there: those two trucks are on the grid in every single race. Read live from work RAM during a one-player race, the four fields hold the player's own name, <code>R.G</code>, <code>M.T</code> and <code>I.S</code>.</p>
+    </div>
+    <p>The third change is the routine that names an unclaimed human slot, which writes <code>R.G</code>. Its rule is that a field which is still all dashes gets the name, but only if the <em>other</em> field is not also all dashes. That distinction matters: before name entry both fields are dashes and must be left alone, whereas afterwards exactly the slot nobody claimed is dashes - which is the case worth naming. It works whichever slot the human used, and does nothing at all when two players have both entered names, since then there is no unused slot. It is called once per race from the race-start code, in main-loop context, because a long call out to this bank from the NMI handler is one of the things confirmed fatal on hardware.</p>
+    <div class="callout">
+      <p>That routine's name cannot be chosen freely. The original game has a documented behaviour where a computer driver races much slower if the player enters the same initials as that driver, and this routine writes into the very work-RAM fields a player's entered initials occupy. So the filler name must never match a computer driver's name, or the patch would quietly cripple that truck. With the two real drivers now permanently on entries 2 and 3, both <code>M.T</code> and <code>I.S</code> are ruled out; <code>R.G</code> collides with neither, and the build asserts this rather than trusting it.</p>
+    </div>
+    <p>All three edits are the same length as what they replace: three characters for three characters in the table, and immediate operands for immediate operands in the routine. Nothing moves and no free space is consumed.</p>
+    <div class="callout">
+      <p>The period is worth a note for anyone editing these names. The game's own name font is not the font this hack appends for its menu, and the two disagree on where the punctuation lives: the character index that is a period in the added font is an exclamation mark in the game's own. Using the wrong one renders <code>I!S</code>. The correct index was confirmed by locating the game's font in the ROM, rendering the characters around it, and cross-checking them against the game's own existing text.</p>
+    </div>
+
+    <h2 id="track-direction">Track and direction selection</h2>
+    <p>The vanilla game picks each race's track and direction by indexing a fixed 64-entry table with a single WRAM race counter that increments once per race and wraps every 64 races. Selecting a track and direction in the menu overrides the exact point where the game consumes that counter to start a race, computing the correct table index for the chosen combination before handing off to the game's own unmodified race-start logic - so the race that plays out afterward is identical in every other respect to a normal one. A small number of tracks have no reverse layout in the original game; selecting REVERSE on one of those has no effect, matching how the game already treats them.</p>
+
+    <h2 id="community-track-data">Community-documented track data (reference)</h2>
+    <p>Separately from this hack's own code, the vanilla SNES version's track-selection internals - the same 64-race cycle referenced above - have been documented by speedrunning community member <strong>KungFuFurby</strong>. All of it is reproduced here for reference, all addresses and offsets referring to the US ROM of Super Off Road:</p>
+    <table>
+      <thead>
+        <tr><th>Address</th><th>What it is</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>$7E001C</code></td><td>WRAM race counter - increments once per race, wraps every 64 races (<code>counter &amp; $3F</code>)</td></tr>
+        <tr><td><code>$008216</code></td><td>ROM track-ID array, 64 bytes (one per race index) - bit 7 set (<code>OR $80</code>) means that race is driven in reverse</td></tr>
+        <tr><td><code>$00C984</code></td><td>ROM hay-bale hazard pointer array - an entry pointing to <code>$CA04</code> means no hay bales are generated for that race</td></tr>
+      </tbody>
+    </table>
+
+    <p>The 64-entry track-ID array at <code>$008216</code>, in race order (race 1 → 64):</p>
+    <p><code>04 06 02 01 8A 86 82 80 05 01 03 00 84 07 05 8B 87 0A 03 8C 08 02 09 0B 00 0E 0C 86 0D 87 81 88 09 0F 83 0E 04 0A 0B 0F 85 80 08 0D 07 0C 8E 06 08 82 8F 8B 84 81 8D 83 88 8A 85 00 8E 8D 8C 8F</code></p>
+
+    <p>Each track ID, its debut race, and its reverse-direction variant's debut race:</p>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Track</th><th>Debuts (normal)</th><th>Debuts (reverse)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>$00</code></td><td>Blaster</td><td>Race 12</td><td>Race 8</td></tr>
+        <tr><td><code>$01</code></td><td>Big Dukes</td><td>Race 4</td><td>Race 31</td></tr>
+        <tr><td><code>$02</code></td><td>Sidewinder</td><td>Race 3</td><td>Race 7</td></tr>
+        <tr><td><code>$03</code></td><td>Cliff Hanger</td><td>Race 11</td><td>Race 35</td></tr>
+        <tr><td><code>$04</code></td><td>Fandango</td><td>Race 1</td><td>Race 13</td></tr>
+        <tr><td><code>$05</code></td><td>Hurricane Gulch</td><td>Race 9</td><td>Race 41</td></tr>
+        <tr><td><code>$06</code></td><td>Huevos Grande</td><td>Race 2</td><td>Race 6</td></tr>
+        <tr><td><code>$07</code></td><td>Wipeout</td><td>Race 14</td><td>Race 17</td></tr>
+        <tr><td><code>$08</code></td><td>Cuttoff Pass</td><td>Race 21</td><td>Race 32</td></tr>
+        <tr><td><code>$09</code></td><td>Boulder Hill</td><td>Race 23</td><td>never used in the 64-race cycle</td></tr>
+        <tr><td><code>$0A</code></td><td>Redoubt-about</td><td>Race 18</td><td>Race 5</td></tr>
+        <tr><td><code>$0B</code></td><td>Rio Trio</td><td>Race 24</td><td>Race 16</td></tr>
+        <tr><td><code>$0C</code></td><td>Leapin' Lizards</td><td>Race 27</td><td>Race 20</td></tr>
+        <tr><td><code>$0D</code></td><td>Shortcut</td><td>Race 29</td><td>Race 55</td></tr>
+        <tr><td><code>$0E</code></td><td>Pig Bog</td><td>Race 26</td><td>Race 47</td></tr>
+        <tr><td><code>$0F</code></td><td>Volcano Valley</td><td>Race 34</td><td>Race 51</td></tr>
+      </tbody>
+    </table>
+
+    <p>Hay bales (course hazards, driven by the same race counter via the <code>$00C984</code> pointer array) appear on races: 3, 6, 10, 12, 15, 17, 19, 24, 27, 31, 33, 36-38, 40, 42, 44, 45, 48-50, 52, 53, 55-61, 63, and 64.</p>
+
+    <div class="callout">
+      <p>How to spot the wraparound: you'll know the 64-race cycle has reset back to race 1 when Fandango is the next course driven after Volcano Valley in the opposite direction with hay bales present. Volcano Valley is driven four times total across the cycle - twice in each direction, twice with hay bales.</p>
+    </div>
+
+    <p style="color:var(--text-muted);font-size:0.85rem;">Source: <a href="https://www.speedrun.com/users/KungFuFurby" target="_blank" rel="noopener">KungFuFurby</a>, <a href="https://www.speedrun.com/ivan_ironman_stewarts_super_off_road_snes/forums/xmyy1" target="_blank" rel="noopener">"Super Off Road wraparound" forum thread</a> on speedrun.com.</p>
+
+  </div>
+  </main>
+</div>
+</body>
+</html>
